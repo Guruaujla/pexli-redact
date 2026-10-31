@@ -11,8 +11,8 @@ export function addRedactStyles(root: Document | ShadowRoot = document) {
   const owner = root.nodeType === Node.DOCUMENT_NODE ? (root as Document) : (root.ownerDocument ?? document);
   const sheet = Object.assign(owner.createElement('style'), { id: SHEET_ID });
   sheet.textContent = [
-    `.${REDACT_CLASS}, .${PICKED_CLASS} { filter: ${SOFTNESS}; transition: filter 150ms ease-out; }`,
-    `.${REDACT_CLASS}.${SHOWN_CLASS} { filter: none; }`,
+    `.${REDACT_CLASS}, .${PICKED_CLASS} { filter: ${SOFTNESS} !important; transition: filter 150ms ease-out; }`,
+    `.${REDACT_CLASS}.${SHOWN_CLASS} { filter: none !important; }`,
     `.${SAMPLE_CLASS}.${SHOWN_CLASS} { outline: 1px dashed currentColor; }`,
   ].join('\n');
   (root.nodeType === Node.DOCUMENT_NODE

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { coveredLevel } from '../covered-level';
 import { levelAtLeast } from '../level-at-least';
 import { presetsForLevel } from '../presets-for-level';
 
@@ -15,5 +16,11 @@ describe('sensitivity levels', () => {
   it('never drops below a workspace minimum', () => {
     expect(levelAtLeast('low', 'medium')).toBe('medium');
     expect(levelAtLeast('high', 'medium')).toBe('high');
+  });
+
+  it('names the highest level a set of presets fully covers', () => {
+    expect(coveredLevel(presetsForLevel('high'))).toBe('high');
+    expect(coveredLevel(['email', 'phone', 'ssn'])).toBe('low');
+    expect(coveredLevel(['email'])).toBeUndefined();
   });
 });

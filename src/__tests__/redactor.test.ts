@@ -172,3 +172,52 @@ describe('coverage', () => {
     expect(document.querySelectorAll(BLURRED)).toHaveLength(0);
   });
 });
+
+describe('leaks the release gate found', () => {
+  it('blurs a match split across inline tags', () => {
+    scanWith('<p>Call <b>ada@</b>example.com or <span>bob@exa</span><i>mple.com</i></p>');
+    const pieces = [...document.querySelectorAll(BLURRED)].map((n) => n.textContent);
+    expect(pieces).toEqual(['ada@', 'example.com', 'bob@exa', 'mple.com']);
+  });
+
+  it('does not join text across block elements', () => {
+    scanWith('<div>ada@</div><div>example.com</div>');
+    expect(document.querySelectorAll(BLURRED)).toHaveLength(0);
+  });
+
+  it('still finds a match inside one node next to another inline node', () => {
+    scanWith('<p><span>mail ada@example.com</span><span>next</span></p>');
+    expect(document.querySelector(BLURRED)?.textContent).toBe('ada@example.com');
+  });
+
+  it('blurs split matches in replace mode, since a sample cannot be split', () => {
+    document.body.innerHTML = '<p><b>ada@</b>example.com and bob@example.com</p>';
+    const scanner = new PageRedactor();
+    scanner.start(['email'], { mode: 'replace', coverAllFields: false });
+    scanner.detach();
+    expect([...document.querySelectorAll(BLURRED)].map((n) => n.textContent)).toEqual(['ada@', 'example.com']);
+    expect(document.body.textContent).not.toContain('bob@example.com');
+    scanner.stop();
+    expect(document.body.innerHTML).toBe('<p><b>ada@</b>example.com and bob@example.com</p>');
+  });
+
+  it('sets the blur inline and important so page styles cannot turn it off', () => {
+    scanWith('<p>ada@example.com</p>');
+    const mark = document.querySelector(BLURRED) as HTMLElement;
+    expect(mark.style.getPropertyValue('filter')).toBe('blur(10px)');
+    expect(mark.style.getPropertyPriority('filter')).toBe('important');
+    expect(mark.style.getPropertyPriority('display')).toBe('important');
+  });
+
+  it('shows and hides a mark on click through its inline style', () => {
+    document.body.innerHTML = '<p>ada@example.com</p>';
+    const scanner = new PageRedactor();
+    scanner.start(['email']);
+    const mark = document.querySelector(BLURRED) as HTMLElement;
+    mark.click();
+    expect(mark.style.getPropertyValue('filter')).toBe('none');
+    mark.click();
+    expect(mark.style.getPropertyValue('filter')).toBe('blur(10px)');
+    scanner.stop();
+  });
+});

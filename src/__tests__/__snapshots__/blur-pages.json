@@ -34,13 +34,19 @@
  {
   "html": "<p>a <em>jane@</em>example.com split across nodes</p>",
   "kinds": 1,
-  "blurred": [],
+  "blurred": [
+   "text:jane@",
+   "text:example.com"
+  ],
   "restored": true
  },
  {
   "html": "<p>a <em>jane@</em>example.com split across nodes</p>",
   "kinds": 6,
-  "blurred": [],
+  "blurred": [
+   "text:jane@",
+   "text:example.com"
+  ],
   "restored": true
  },
  {

@@ -8,6 +8,34 @@ import { addRedactStyles, PICKED_CLASS, REDACT_CLASS, SAMPLE_CLASS, SHOWN_CLASS 
 export const REDACT_ATTR = 'data-mimik-redact';
 
 const FIELD_FILTER = 'blur(10px)';
+const INLINE_TAGS = new Set([
+  'a',
+  'abbr',
+  'b',
+  'bdi',
+  'bdo',
+  'cite',
+  'code',
+  'data',
+  'dfn',
+  'em',
+  'font',
+  'i',
+  'kbd',
+  'label',
+  'mark',
+  'q',
+  's',
+  'samp',
+  'small',
+  'span',
+  'strong',
+  'sub',
+  'sup',
+  'time',
+  'u',
+  'var',
+]);
 const RESCAN_AFTER_MS = 300;
 const RESCAN_AT_MOST_MS = 1000;
 
@@ -43,6 +71,20 @@ function readableText(root: Document | ShadowRoot): Text[] {
     if (text.data.trim()) found.push(text);
   }
   return found;
+}
+
+function textRuns(texts: Text[]): Text[][] {
+  const runs: Text[][] = [];
+  let block: Node | null = null;
+  for (const text of texts) {
+    let el = text.parentElement;
+    while (el && INLINE_TAGS.has(el.localName)) el = el.parentElement;
+    const owner: Node = el ?? text.getRootNode();
+    if (owner === block) runs[runs.length - 1]!.push(text);
+    else runs.push([text]);
+    block = owner;
+  }
+  return runs;
 }
 
 function fieldText(field: Field): string {
@@ -139,10 +181,7 @@ export class PageRedactor implements BlurDetector {
     for (const root of roots) {
       addRedactStyles(root);
       if (patterns.length > 0) {
-        for (const text of readableText(root)) {
-          const spans = sensitiveSpans(text.data, patterns);
-          if (spans.length > 0) this.markSpans(text, spans);
-        }
+        for (const run of textRuns(readableText(root))) this.markRun(run, patterns);
         for (const element of Array.from(root.querySelectorAll(MASKED_ATTRIBUTES.map((a) => `[${a}]`).join(', '))))
           this.maskAttributes(element);
       }
@@ -200,19 +239,51 @@ export class PageRedactor implements BlurDetector {
     return sampleValue(kind, original);
   }
 
-  private markSpans(text: Text, spans: TextSpan[]) {
+  private markRun(run: Text[], patterns: ReturnType<typeof patternsFor>) {
+    const joined = run.length > 1 ? sensitiveSpans(run.map((text) => text.data).join(''), patterns) : [];
+    let from = 0;
+    for (const text of run) {
+      const to = from + text.data.length;
+      const spans: (TextSpan & { whole: boolean })[] = sensitiveSpans(text.data, patterns).map((span) => ({
+        ...span,
+        whole: true,
+      }));
+      for (const { start, end } of joined) {
+        if (start >= to || end <= from || (start >= from && end <= to)) continue;
+        spans.push({ start: Math.max(start, from) - from, end: Math.min(end, to) - from, whole: false });
+      }
+      spans.sort((a, b) => a.start - b.start);
+      const merged: (TextSpan & { whole: boolean })[] = [];
+      for (const span of spans) {
+        const last = merged[merged.length - 1];
+        if (last && span.start < last.end) {
+          last.end = Math.max(last.end, span.end);
+          last.whole = false;
+        } else merged.push({ ...span });
+      }
+      if (merged.length > 0) this.markSpans(text, merged);
+      from = to;
+    }
+  }
+
+  private markSpans(text: Text, spans: (TextSpan & { whole: boolean })[]) {
     const owner = text.ownerDocument;
-    for (const { start, end } of [...spans].reverse()) {
+    for (const { start, end, whole } of [...spans].reverse()) {
       if (end < text.data.length) text.splitText(end);
       const piece = start > 0 ? text.splitText(start) : text;
       const mark = owner.createElement('span');
       piece.replaceWith(mark);
-      if (this.options.mode === 'replace') this.swapForSample(mark, piece.data);
+      if (this.options.mode === 'replace' && whole) this.swapForSample(mark, piece.data);
       else {
         mark.className = REDACT_CLASS;
         mark.setAttribute(REDACT_ATTR, 'text');
+        mark.style.setProperty('display', 'inline', 'important');
+        mark.style.setProperty('filter', FIELD_FILTER, 'important');
         mark.append(piece);
-        this.toggleOnClick(mark, () => mark.classList.toggle(SHOWN_CLASS));
+        this.toggleOnClick(mark, () => {
+          const shown = mark.classList.toggle(SHOWN_CLASS);
+          mark.style.setProperty('filter', shown ? 'none' : FIELD_FILTER, 'important');
+        });
       }
     }
   }
