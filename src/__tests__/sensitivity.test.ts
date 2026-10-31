@@ -10,7 +10,7 @@ describe('sensitivity levels', () => {
     const high = presetsForLevel('high');
     expect(low.every((k) => medium.includes(k))).toBe(true);
     expect(medium.every((k) => high.includes(k))).toBe(true);
-    expect(high).toHaveLength(6);
+    expect(high).toHaveLength(7);
   });
 
   it('never drops below a workspace minimum', () => {
@@ -20,7 +20,8 @@ describe('sensitivity levels', () => {
 
   it('names the highest level a set of presets fully covers', () => {
     expect(coveredLevel(presetsForLevel('high'))).toBe('high');
-    expect(coveredLevel(['email', 'phone', 'ssn'])).toBe('low');
+    expect(coveredLevel(['email', 'phone', 'personal', 'ssn'])).toBe('low');
+    expect(coveredLevel(['email', 'phone', 'ssn'])).toBeUndefined();
     expect(coveredLevel(['email'])).toBeUndefined();
   });
 });

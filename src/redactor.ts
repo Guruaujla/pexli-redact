@@ -1,5 +1,9 @@
 import type { BlurDetector } from './detector';
+import { fieldHint } from './field-hint';
+import { looksTechnical } from './looks-technical';
 import { type PresetKey, patternsFor, sensitiveSpans, type TextSpan } from './patterns';
+import { personalCells } from './personal-cells';
+import { personalHint } from './personal-hint';
 import { redactRoots } from './redact-roots';
 import { sampleValue } from './sample-value';
 import { DEFAULT_REDACT_OPTIONS, type RedactOptions } from './sensitivity';
@@ -160,7 +164,9 @@ export class PageRedactor implements BlurDetector {
         mark.replaceWith(this.originals.get(mark) ?? mark.textContent ?? '');
         parent?.normalize();
       }
-      for (const field of Array.from(root.querySelectorAll<HTMLElement>(`[${REDACT_ATTR}="field"]`))) {
+      for (const field of Array.from(
+        root.querySelectorAll<HTMLElement>(`[${REDACT_ATTR}="field"], [${REDACT_ATTR}="cell"]`),
+      )) {
         field.style.removeProperty('filter');
         if (!field.getAttribute('style')) field.removeAttribute('style');
         field.removeAttribute(REDACT_ATTR);
@@ -177,20 +183,38 @@ export class PageRedactor implements BlurDetector {
     const patterns = patternsFor(this.kinds);
     const roots = redactRoots(document);
     for (const root of roots) this.watch(root);
-    if (patterns.length === 0 && !this.options.coverAllFields) return;
+    const personal = this.kinds.includes('personal');
+    if (patterns.length === 0 && !personal && !this.options.coverAllFields) return;
     for (const root of roots) {
       addRedactStyles(root);
+      if (personal) this.coverPersonalCells(root);
       if (patterns.length > 0) {
         for (const run of textRuns(readableText(root))) this.markRun(run, patterns);
         for (const element of Array.from(root.querySelectorAll(MASKED_ATTRIBUTES.map((a) => `[${a}]`).join(', '))))
           this.maskAttributes(element);
       }
-      for (const field of Array.from(root.querySelectorAll<Field>('input, textarea, select'))) {
-        const text = fieldText(field);
-        if (field.hasAttribute(REDACT_ATTR) || !text) continue;
-        if (sensitiveSpans(text, patterns).length > 0) this.coverField(field);
-        else if (this.options.coverAllFields && !UNCOVERED_INPUTS.includes(field.type)) this.coverField(field);
-      }
+      this.coverFields(root, patterns, personal);
+    }
+  }
+
+  private coverPersonalCells(root: Document | ShadowRoot) {
+    for (const cell of personalCells(root)) {
+      if (!cell.closest(`[${REDACT_ATTR}]`) && cell.textContent?.trim()) this.cover(cell, 'cell');
+    }
+  }
+
+  private coverFields(root: Document | ShadowRoot, patterns: RegExp[], personal: boolean) {
+    for (const field of Array.from(root.querySelectorAll<Field>('input, textarea, select'))) {
+      const text = fieldText(field);
+      if (field.hasAttribute(REDACT_ATTR)) continue;
+      const coverable = !UNCOVERED_INPUTS.includes(field.type);
+      const named =
+        coverable &&
+        personal &&
+        !looksTechnical(text) &&
+        personalHint(fieldHint(field), field.getAttribute('autocomplete') ?? '');
+      if (named || (text && (sensitiveSpans(text, patterns).length > 0 || (coverable && this.options.coverAllFields))))
+        this.cover(field, 'field');
     }
   }
 
@@ -300,9 +324,9 @@ export class PageRedactor implements BlurDetector {
     });
   }
 
-  private coverField(field: Field) {
+  private cover(field: HTMLElement, kind: 'field' | 'cell') {
     field.style.setProperty('filter', FIELD_FILTER, 'important');
-    field.setAttribute(REDACT_ATTR, 'field');
+    field.setAttribute(REDACT_ATTR, kind);
     this.toggleOnClick(field, () => {
       if (field.style.filter) field.style.removeProperty('filter');
       else field.style.setProperty('filter', FIELD_FILTER, 'important');

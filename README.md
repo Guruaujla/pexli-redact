@@ -4,13 +4,13 @@ The redaction engine from [Pexli](https://pexli.io). It finds personal data on a
 
 ## What it detects
 
-| Level  | Hides                                  |
-| ------ | -------------------------------------- |
-| low    | emails, phone numbers                  |
-| medium | low, plus social security and card numbers |
-| high   | medium, plus IP and MAC addresses      |
+| Level  | Hides                                                        |
+| ------ | ------------------------------------------------------------ |
+| low    | emails, phone numbers, names and addresses in labelled form fields and table columns |
+| medium | low, plus social security and card numbers                   |
+| high   | medium, plus IP and MAC addresses                            |
 
-Nothing else is detected. Names, street addresses and free text need a manual blur.
+Names in free text, chat or headings are not detected yet and need a manual blur.
 
 ## Use
 

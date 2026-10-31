@@ -70,5 +70,7 @@ export function sampleValue(kind: PresetKey, original: string): string {
       const out = ['00', '00', '5e', '00', '53', tail].join(sep);
       return original === original.toUpperCase() ? out.toUpperCase() : out;
     }
+    case 'personal':
+      return `${pick(FIRST)} ${pick(LAST)}`;
   }
 }

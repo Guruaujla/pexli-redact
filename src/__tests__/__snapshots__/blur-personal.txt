@@ -1,0 +1,90 @@
+blur name
+blur Name
+blur Full name
+blur Your name
+blur First name
+blur Last name
+blur Middle name
+blur Maiden name
+blur Legal name
+blur Preferred name
+keep Display name
+blur Nickname
+blur Contact name
+blur Customer name
+blur Patient name
+blur Cardholder name
+blur Name on card
+blur Emergency contact name
+blur Surname
+blur Forename
+blur fname
+blur lname
+blur firstName
+blur lastName
+blur first_name
+blur last-name
+blur user[name]
+blur customer[first_name]
+keep Username
+keep User name
+keep Company name
+keep Organization name
+keep Business name
+keep File name
+keep Product name
+keep Project name
+keep Workspace name
+keep Team name
+keep Account name
+keep Domain name
+keep Host name
+keep Server name
+keep App name
+keep Bank name
+keep Brand name
+keep Event name
+keep Field name
+keep Column name
+keep Tag name
+keep Branch name
+blur Address
+blur Street address
+blur Home address
+blur Shipping address
+blur Billing address
+blur Mailing address
+blur Address line 1
+blur address_line2
+blur Street
+keep City
+keep State
+keep Country
+blur ZIP
+blur Zip code
+blur ZIP / Postal code
+blur Postcode
+blur Postal code
+keep Email address
+keep E-mail address
+keep IP address
+keep MAC address
+keep Web address
+keep Wallet address
+keep Server address
+blur Date of birth
+blur DOB
+blur Birthday
+blur Birth date
+blur birthdate
+keep Date
+keep Start date
+keep Phone
+keep Search
+keep Password
+keep Notes
+keep Description
+keep Title
+keep Role
+keep Plan
+keep Status

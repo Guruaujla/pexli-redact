@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 import { type PresetKey, patternsFor, sensitiveSpans } from '../patterns';
+import { personalHint } from '../personal-hint';
 import { PageRedactor } from '../redactor';
 import { fuzzSamples, PAGES, SAMPLES, shapedSamples } from './blur-corpus';
+import { PERSONAL_HINTS } from './personal-corpus';
 
 const KINDS: PresetKey[] = ['email', 'phone', 'ssn', 'creditCard', 'ipAddress', 'macAddress'];
 const BLURRED = '[data-mimik-redact]';
@@ -49,5 +51,10 @@ describe('smart blur keeps blurring exactly what it blurred before the rewrite',
       }),
     );
     await expect(JSON.stringify(pages, null, 1)).toMatchFileSnapshot('./__snapshots__/blur-pages.json');
+  });
+
+  it('treats the same field hints as names and addresses', async () => {
+    const decided = PERSONAL_HINTS.map((hint) => `${personalHint(hint) ? 'blur' : 'keep'} ${hint}`);
+    await expect(decided.join('\n')).toMatchFileSnapshot('./__snapshots__/blur-personal.txt');
   });
 });

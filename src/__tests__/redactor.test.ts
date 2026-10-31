@@ -221,3 +221,91 @@ describe('leaks the release gate found', () => {
     scanner.stop();
   });
 });
+
+describe('names and addresses', () => {
+  const scanPersonal = (html: string) => {
+    document.body.innerHTML = html;
+    const scanner = new PageRedactor();
+    scanner.start(['personal']);
+    scanner.detach();
+    return scanner;
+  };
+  const covered = () =>
+    [...document.querySelectorAll('[data-mimik-redact]')].map((n) => n.getAttribute('data-mimik-redact'));
+
+  it('covers fields whose label, name or autocomplete marks a person', () => {
+    scanPersonal(
+      '<label>Full name <input value="Ada Lovelace"></label><input name="zip" value="90210"><input autocomplete="family-name" value="Lovelace"><input name="username" value="ada"><input name="company" value="Acme">',
+    );
+    const inputs = [...document.querySelectorAll('input')];
+    expect(inputs.map((i) => i.hasAttribute('data-mimik-redact'))).toEqual([true, true, true, false, false]);
+  });
+
+  it('covers table cells under a name or address header and leaves the rest', () => {
+    scanPersonal(
+      '<table><thead><tr><th>Name</th><th>Plan</th><th colspan="2">Address</th></tr></thead><tbody><tr><td>Ada</td><td>Team</td><td>1 Main St</td><td>Leeds</td></tr></tbody></table>',
+    );
+    const cells = [...document.querySelectorAll('td')];
+    expect(cells.map((c) => c.getAttribute('data-mimik-redact'))).toEqual(['cell', null, 'cell', 'cell']);
+    expect(cells[0]!.style.getPropertyPriority('filter')).toBe('important');
+  });
+
+  it('covers row-header tables and definition lists', () => {
+    scanPersonal(
+      '<table><tr><th>Birthday</th><td>1 May</td></tr><tr><th>Role</th><td>Admin</td></tr></table><dl><dt>Name</dt><dd>Ada</dd><dt>Team</dt><dd>Ops</dd></dl>',
+    );
+    expect(covered()).toEqual(['cell', 'cell']);
+    expect([...document.querySelectorAll('[data-mimik-redact]')].map((n) => n.textContent)).toEqual(['1 May', 'Ada']);
+  });
+
+  it('covers an empty name field before anything is typed or pasted into it', () => {
+    scanPersonal('<label>Full name <input id="n"></label><input name="search">');
+    expect(document.getElementById('n')!.getAttribute('data-mimik-redact')).toBe('field');
+    expect(document.querySelector('[name="search"]')!.hasAttribute('data-mimik-redact')).toBe(false);
+  });
+
+  it('lets a label decide over an id or name', () => {
+    scanPersonal(
+      '<label for="a">First name</label><input id="a" name="user[first_name]"><label for="b">Company name</label><input id="b" name="name"><input id="field-:r2:" aria-label="Last name"><input name="user[last_name]">',
+    );
+    expect([...document.querySelectorAll('input')].map((i) => i.hasAttribute('data-mimik-redact'))).toEqual([
+      true,
+      false,
+      true,
+      true,
+    ]);
+  });
+
+  it('leaves IPs, hosts and file names in name or address columns', () => {
+    scanPersonal(
+      '<table><tr><th>Name</th><th>Address</th></tr><tr><td>report.pdf</td><td>10.0.0.4</td></tr><tr><td>Ada Lovelace</td><td>api.acme.io</td></tr></table>',
+    );
+    expect([...document.querySelectorAll('[data-mimik-redact]')].map((n) => n.textContent)).toEqual(['Ada Lovelace']);
+  });
+
+  it('covers ARIA grids, row headers and header rows with a checkbox column', () => {
+    scanPersonal(
+      '<div role="grid"><div role="row"><span role="columnheader">Customer name</span><span role="columnheader">Plan</span></div><div role="row"><span role="gridcell">Maria Garcia</span><span role="gridcell">Pro</span></div></div>' +
+        '<table><tr><td><input type="checkbox"></td><th>Name</th><th>Plan</th></tr><tr><td><input type="checkbox"></td><th scope="row">Jon Snow</th><td>Free</td></tr></table>',
+    );
+    expect([...document.querySelectorAll('[data-mimik-redact]')].map((n) => n.textContent)).toEqual([
+      'Maria Garcia',
+      'Jon Snow',
+    ]);
+  });
+
+  it('restores the page exactly', () => {
+    const html = '<table><thead><tr><th>Name</th></tr></thead><tbody><tr><td>Ada</td></tr></tbody></table>';
+    const scanner = scanPersonal(html);
+    scanner.stop();
+    expect(document.body.innerHTML).toBe(html);
+  });
+
+  it('does nothing when the preset is off', () => {
+    document.body.innerHTML = '<label>Name <input value="Ada"></label>';
+    const scanner = new PageRedactor();
+    scanner.start(['email']);
+    scanner.detach();
+    expect(covered()).toEqual([]);
+  });
+});

@@ -1,8 +1,9 @@
-export type PresetKey = 'email' | 'phone' | 'ssn' | 'creditCard' | 'ipAddress' | 'macAddress';
+export type PresetKey = 'email' | 'phone' | 'personal' | 'ssn' | 'creditCard' | 'ipAddress' | 'macAddress';
 
 export const PRESET_LABELS: Record<PresetKey, string> = {
   email: 'Email',
   phone: 'Phone Numbers',
+  personal: 'Names & Addresses',
   ssn: 'SSN',
   creditCard: 'Credit Card',
   ipAddress: 'IP Address',
@@ -12,6 +13,7 @@ export const PRESET_LABELS: Record<PresetKey, string> = {
 export const DEFAULT_PRESETS: Record<PresetKey, boolean> = {
   email: true,
   phone: true,
+  personal: true,
   ssn: false,
   creditCard: false,
   ipAddress: false,
@@ -28,7 +30,7 @@ const PHONE_SHAPES = [
   String.raw`\b\d{10,11}`,
 ];
 
-const SHAPES: Record<PresetKey, { source: string; caseless?: true }> = {
+const SHAPES: Partial<Record<PresetKey, { source: string; caseless?: true }>> = {
   email: { source: String.raw`\b[\w.%+-]+@[a-z\d.-]+\.[a-z]{2,}\b`, caseless: true },
   phone: { source: `(?:${PHONE_SHAPES.join('|')})\\b` },
   ssn: { source: String.raw`\b\d\d\d-?\d\d-?\d\d\d\d\b` },
@@ -38,9 +40,10 @@ const SHAPES: Record<PresetKey, { source: string; caseless?: true }> = {
 };
 
 export function patternsFor(kinds: readonly PresetKey[]): RegExp[] {
-  return kinds
-    .filter((kind) => kind in SHAPES)
-    .map((kind) => new RegExp(SHAPES[kind].source, SHAPES[kind].caseless ? 'gi' : 'g'));
+  return kinds.flatMap((kind) => {
+    const shape = SHAPES[kind];
+    return shape ? [new RegExp(shape.source, shape.caseless ? 'gi' : 'g')] : [];
+  });
 }
 
 export interface TextSpan {

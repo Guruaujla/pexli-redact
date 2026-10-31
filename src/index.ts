@@ -1,6 +1,7 @@
 export type { BlurDetector } from './detector';
 export { coveredLevel } from './covered-level';
 export { levelAtLeast } from './level-at-least';
+export { personalHint } from './personal-hint';
 export { DEFAULT_PRESETS, PRESET_LABELS, type PresetKey, patternsFor, sensitiveSpans, type TextSpan } from './patterns';
 export { presetsForLevel } from './presets-for-level';
 export { redactRoots } from './redact-roots';
