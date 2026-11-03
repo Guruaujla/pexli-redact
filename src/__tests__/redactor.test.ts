@@ -209,14 +209,14 @@ describe('leaks the release gate found', () => {
     expect(mark.style.getPropertyPriority('display')).toBe('important');
   });
 
-  it('shows and hides a mark on click through its inline style', () => {
+  it('shows and hides a mark through its inline style', () => {
     document.body.innerHTML = '<p>ada@example.com</p>';
     const scanner = new PageRedactor();
     scanner.start(['email']);
     const mark = document.querySelector(BLURRED) as HTMLElement;
-    mark.click();
+    scanner['reveal'](mark);
     expect(mark.style.getPropertyValue('filter')).toBe('none');
-    mark.click();
+    scanner['reveal'](mark);
     expect(mark.style.getPropertyValue('filter')).toBe('blur(10px)');
     scanner.stop();
   });

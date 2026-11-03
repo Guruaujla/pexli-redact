@@ -387,3 +387,25 @@ describe('patternsFor', () => {
     expect(sensitiveSpans('a@b.co', patternsFor(['email']))).toHaveLength(1);
   });
 });
+
+describe('unicode tricks (#154)', () => {
+  const email = patternsFor(['email']);
+  const card = patternsFor(['creditCard']);
+  const spanText = (text: string, patterns: RegExp[]) =>
+    sensitiveSpans(text, patterns).map(({ start, end }) => text.slice(start, end));
+
+  it('sees through zero-width spaces, soft hyphens and word joiners', () => {
+    expect(spanText('mail jane​.doe@exam­ple.com now', email)).toEqual(['jane​.doe@exam­ple.com']);
+    expect(spanText('4111⁠1111 1111 1111', card)).toEqual(['4111⁠1111 1111 1111']);
+  });
+
+  it('reads full-width and Arabic-Indic digits and the full-width at sign', () => {
+    expect(spanText('jane＠example.com', email)).toEqual(['jane＠example.com']);
+    expect(spanText('card ٤١١١ ١١١١ ١١١١ ١١١١ ok', card)).toEqual(['٤١١١ ١١١١ ١١١١ ١١١١']);
+    expect(spanText('۴۱۱۱۱۱۱۱۱۱۱۱۱۱۱۱', card)).toEqual(['۴۱۱۱۱۱۱۱۱۱۱۱۱۱۱۱']);
+  });
+
+  it('keeps plain non-ASCII text that holds no secret clean', () => {
+    expect(sensitiveSpans('Привет, мир — ünïcödé', email)).toEqual([]);
+  });
+});

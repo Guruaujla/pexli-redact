@@ -1,3 +1,5 @@
+import { foldText } from './fold-text';
+
 export type PresetKey = 'email' | 'phone' | 'personal' | 'ssn' | 'creditCard' | 'ipAddress' | 'macAddress';
 
 export const PRESET_LABELS: Record<PresetKey, string> = {
@@ -52,13 +54,15 @@ export interface TextSpan {
 }
 
 export function sensitiveSpans(text: string, patterns: readonly RegExp[]): TextSpan[] {
+  const folded = foldText(text);
+  const source = folded?.text ?? text;
   const hits = patterns.flatMap((pattern) =>
     Array.from(
-      text.matchAll(new RegExp(pattern.source, pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`)),
-      (hit) => ({
-        start: hit.index,
-        end: hit.index + hit[0].length,
-      }),
+      source.matchAll(new RegExp(pattern.source, pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`)),
+      (hit) =>
+        folded
+          ? { start: folded.starts[hit.index] ?? 0, end: folded.ends[hit.index + hit[0].length - 1] ?? text.length }
+          : { start: hit.index, end: hit.index + hit[0].length },
     ),
   );
   hits.sort((a, b) => a.start - b.start || b.end - a.end);

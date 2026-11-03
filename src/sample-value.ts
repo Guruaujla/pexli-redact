@@ -46,14 +46,15 @@ export function sampleValue(kind: PresetKey, original: string): string {
   const pick = <T>(list: readonly T[]) => list[Math.floor(next() * list.length)]!;
   const digit = () => String(Math.floor(next() * 10));
   let digitsSeen = 0;
-  const reshape = (fill: (index: number) => string) => original.replace(/\d/g, () => fill(digitsSeen++));
+  const reshape = (fill: (index: number) => string) =>
+    original.replace(/\p{Decimal_Number}/gu, () => fill(digitsSeen++));
   switch (kind) {
     case 'email': {
       const name = `${pick(FIRST)}.${pick(LAST)}`;
       return original === original.toUpperCase() ? `${name}@EXAMPLE.COM`.toUpperCase() : `${name}@example.com`;
     }
     case 'phone': {
-      const total = original.replace(/\D/g, '').length;
+      const total = original.replace(/\P{Decimal_Number}/gu, '').length;
       return reshape((i) => (i >= total - 7 && i < total - 4 ? '555'[i - (total - 7)]! : digit()));
     }
     case 'ssn':

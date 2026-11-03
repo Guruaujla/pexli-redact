@@ -1,6 +1,6 @@
 {
   "name": "@pexli/redact",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "In-page detection and redaction of personal data (emails, phones, labelled names and addresses, IDs, cards, IP and MAC addresses) before a screenshot is taken. The engine behind Pexli.",
   "license": "MIT",
   "type": "module",

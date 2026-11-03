@@ -12,6 +12,14 @@ import { addRedactStyles, PICKED_CLASS, REDACT_CLASS, SAMPLE_CLASS, SHOWN_CLASS 
 export const REDACT_ATTR = 'data-mimik-redact';
 
 const FIELD_FILTER = 'blur(10px)';
+const OWNED = new WeakSet<Element>();
+const REPAIRS_PER_TICK = 20;
+const REPAIR_TICK_MS = 16;
+const HELD_PROPERTIES = ['filter', 'transition-property', 'display'];
+const HELD_STYLE: [string, string][] = [
+  ['filter', FIELD_FILTER],
+  ['transition-property', 'none'],
+];
 const INLINE_TAGS = new Set([
   'a',
   'abbr',
@@ -61,7 +69,7 @@ const UNCOVERED_INPUTS = [
 
 type Field = HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
 
-function readableText(root: Document | ShadowRoot): Text[] {
+function readableText(root: Document | ShadowRoot, owned: (element: Element) => boolean): Text[] {
   const found: Text[] = [];
   const isDocument = root.nodeType === Node.DOCUMENT_NODE;
   const start = isDocument ? (root as Document).body : root;
@@ -71,18 +79,47 @@ function readableText(root: Document | ShadowRoot): Text[] {
   for (let node = walker.nextNode(); node; node = walker.nextNode()) {
     const text = node as Text;
     const parent = text.parentElement;
-    if (!parent || parent.matches(NON_TEXT_PARENTS) || parent.closest(`[${REDACT_ATTR}]`)) continue;
-    if (text.data.trim()) found.push(text);
+    if (!parent || parent.matches(NON_TEXT_PARENTS)) continue;
+    let inside = false;
+    for (
+      let el = parent.closest(`[${REDACT_ATTR}]`);
+      el && !inside;
+      el = el.parentElement?.closest(`[${REDACT_ATTR}]`) ?? null
+    )
+      inside = owned(el);
+    if (inside) continue;
+    if (!text.data.trim() && /flex|grid/.test(owner.defaultView?.getComputedStyle(parent).display ?? '')) continue;
+    found.push(text);
   }
   return found;
 }
 
+const flexRow = (style: CSSStyleDeclaration | undefined) =>
+  !!style && style.display.endsWith('flex') && style.flexWrap === 'nowrap' && !style.flexDirection.startsWith('column');
+
+function flowsInline(el: Element, seen: Map<Element, boolean>): boolean {
+  const known = seen.get(el);
+  if (known !== undefined) return known;
+  const view = el.ownerDocument.defaultView;
+  const display = view?.getComputedStyle(el).display ?? '';
+  const parent = el.parentElement;
+  const cell =
+    !!parent &&
+    el.childElementCount === 0 &&
+    (el.textContent ?? '').trim().length === 1 &&
+    flexRow(view?.getComputedStyle(parent));
+  const inline = INLINE_TAGS.has(el.localName) || display.startsWith('inline') || display === 'contents' || cell;
+  seen.set(el, inline);
+  return inline;
+}
+
 function textRuns(texts: Text[]): Text[][] {
   const runs: Text[][] = [];
+  const seen = new Map<Element, boolean>();
   let block: Node | null = null;
   for (const text of texts) {
     let el = text.parentElement;
-    while (el && INLINE_TAGS.has(el.localName)) el = el.parentElement;
+    while (el && flowsInline(el, seen)) el = el.parentElement;
     const owner: Node = el ?? text.getRootNode();
     if (owner === block) runs[runs.length - 1]!.push(text);
     else runs.push([text]);
@@ -102,6 +139,12 @@ export class PageRedactor implements BlurDetector {
   private editable = true;
   private readonly originals = new WeakMap<Element, string>();
   private readonly masked = new Map<Element, Map<string, { original: string; masked: string }>>();
+  private held = new WeakSet<HTMLElement>();
+  private revealed = new WeakSet<HTMLElement>();
+  private readonly pageStyle = new WeakMap<HTMLElement, [string, string, string][]>();
+  private readonly repairs = new Map<HTMLElement, number>();
+  private repairReset: ReturnType<typeof setTimeout> | undefined;
+  private readonly isOwned = (element: Element) => OWNED.has(element);
   private watcher: MutationObserver | null = null;
   private readonly listening = new Set<Document>();
   private pending: ReturnType<typeof setTimeout> | undefined;
@@ -124,7 +167,14 @@ export class PageRedactor implements BlurDetector {
     this.kinds = kinds;
     this.options = options;
     this.editable = true;
-    this.watcher = new MutationObserver(this.rescanSoon);
+    this.watcher = new MutationObserver((records) => {
+      let changed = false;
+      for (const record of records) {
+        if (record.type === 'attributes') this.repair(record.target as HTMLElement);
+        else changed = true;
+      }
+      if (changed) this.rescanSoon();
+    });
     this.redact();
   }
 
@@ -167,12 +217,21 @@ export class PageRedactor implements BlurDetector {
       for (const field of Array.from(
         root.querySelectorAll<HTMLElement>(`[${REDACT_ATTR}="field"], [${REDACT_ATTR}="cell"]`),
       )) {
-        field.style.removeProperty('filter');
+        this.release(field);
+        OWNED.delete(field);
         if (!field.getAttribute('style')) field.removeAttribute('style');
         field.removeAttribute(REDACT_ATTR);
       }
-      for (const picked of Array.from(root.querySelectorAll(`.${PICKED_CLASS}`))) picked.classList.remove(PICKED_CLASS);
+      for (const picked of Array.from(root.querySelectorAll<HTMLElement>(`.${PICKED_CLASS}`))) {
+        picked.classList.remove(PICKED_CLASS);
+        if (picked.getAttribute(REDACT_ATTR) !== 'manual') continue;
+        this.release(picked);
+        picked.removeAttribute(REDACT_ATTR);
+        if (!picked.getAttribute('style')) picked.removeAttribute('style');
+      }
     }
+    this.held = new WeakSet();
+    this.revealed = new WeakSet();
     for (const [element, attributes] of this.masked) {
       for (const [name, { original }] of attributes) element.setAttribute(name, original);
     }
@@ -189,7 +248,7 @@ export class PageRedactor implements BlurDetector {
       addRedactStyles(root);
       if (personal) this.coverPersonalCells(root);
       if (patterns.length > 0) {
-        for (const run of textRuns(readableText(root))) this.markRun(run, patterns);
+        for (const run of textRuns(readableText(root, this.isOwned))) this.markRun(run, patterns);
         for (const element of Array.from(root.querySelectorAll(MASKED_ATTRIBUTES.map((a) => `[${a}]`).join(', '))))
           this.maskAttributes(element);
       }
@@ -199,14 +258,15 @@ export class PageRedactor implements BlurDetector {
 
   private coverPersonalCells(root: Document | ShadowRoot) {
     for (const cell of personalCells(root)) {
-      if (!cell.closest(`[${REDACT_ATTR}]`) && cell.textContent?.trim()) this.cover(cell, 'cell');
+      const marked = cell.closest(`[${REDACT_ATTR}]`);
+      if ((!marked || !this.isOwned(marked)) && cell.textContent?.trim()) this.cover(cell, 'cell');
     }
   }
 
   private coverFields(root: Document | ShadowRoot, patterns: RegExp[], personal: boolean) {
     for (const field of Array.from(root.querySelectorAll<Field>('input, textarea, select'))) {
       const text = fieldText(field);
-      if (field.hasAttribute(REDACT_ATTR)) continue;
+      if (OWNED.has(field)) continue;
       const coverable = !UNCOVERED_INPUTS.includes(field.type);
       const named =
         coverable &&
@@ -222,7 +282,13 @@ export class PageRedactor implements BlurDetector {
     if (!this.watcher) return;
     const isDocument = root.nodeType === Node.DOCUMENT_NODE;
     const target = isDocument ? (root as Document).documentElement : root;
-    if (target) this.watcher.observe(target, { subtree: true, childList: true, characterData: true });
+    if (target)
+      this.watcher.observe(target, {
+        subtree: true,
+        childList: true,
+        characterData: true,
+        attributeFilter: ['style', 'class'],
+      });
     if (!isDocument || this.listening.has(root as Document)) return;
     this.listening.add(root as Document);
     root.addEventListener('input', this.rescanSoon, true);
@@ -232,7 +298,7 @@ export class PageRedactor implements BlurDetector {
 
   private toggleOnClick(target: HTMLElement, toggle: () => void) {
     target.addEventListener('click', (event) => {
-      if (!this.editable) return;
+      if (!this.editable || !event.isTrusted) return;
       event.preventDefault();
       event.stopPropagation();
       toggle();
@@ -285,7 +351,7 @@ export class PageRedactor implements BlurDetector {
           last.whole = false;
         } else merged.push({ ...span });
       }
-      if (merged.length > 0) this.markSpans(text, merged);
+      if (merged.length > 0 && text.data.trim()) this.markSpans(text, merged);
       from = to;
     }
   }
@@ -301,12 +367,13 @@ export class PageRedactor implements BlurDetector {
       else {
         mark.className = REDACT_CLASS;
         mark.setAttribute(REDACT_ATTR, 'text');
+        OWNED.add(mark);
         mark.style.setProperty('display', 'inline', 'important');
-        mark.style.setProperty('filter', FIELD_FILTER, 'important');
+        this.hold(mark);
         mark.append(piece);
         this.toggleOnClick(mark, () => {
-          const shown = mark.classList.toggle(SHOWN_CLASS);
-          mark.style.setProperty('filter', shown ? 'none' : FIELD_FILTER, 'important');
+          mark.classList.toggle(SHOWN_CLASS);
+          this.reveal(mark);
         });
       }
     }
@@ -316,6 +383,7 @@ export class PageRedactor implements BlurDetector {
     const sample = this.sampleFor(original);
     mark.className = SAMPLE_CLASS;
     mark.setAttribute(REDACT_ATTR, 'sample');
+    OWNED.add(mark);
     mark.textContent = sample;
     this.originals.set(mark, original);
     this.toggleOnClick(mark, () => {
@@ -325,11 +393,75 @@ export class PageRedactor implements BlurDetector {
   }
 
   private cover(field: HTMLElement, kind: 'field' | 'cell') {
-    field.style.setProperty('filter', FIELD_FILTER, 'important');
+    this.hold(field);
     field.setAttribute(REDACT_ATTR, kind);
-    this.toggleOnClick(field, () => {
-      if (field.style.filter) field.style.removeProperty('filter');
-      else field.style.setProperty('filter', FIELD_FILTER, 'important');
-    });
+    OWNED.add(field);
+    this.toggleOnClick(field, () => this.reveal(field));
+  }
+
+  private reveal(element: HTMLElement) {
+    if (this.revealed.has(element)) {
+      this.revealed.delete(element);
+      this.hold(element);
+    } else {
+      this.revealed.add(element);
+      element.style.setProperty('filter', 'none', 'important');
+    }
+  }
+
+  private hold(element: HTMLElement) {
+    this.held.add(element);
+    if (!this.pageStyle.has(element))
+      this.pageStyle.set(
+        element,
+        HELD_PROPERTIES.map((name) => [
+          name,
+          element.style.getPropertyValue(name),
+          element.style.getPropertyPriority(name),
+        ]),
+      );
+    this.pin(element);
+    if (element.isConnected && element.ownerDocument.defaultView?.getComputedStyle(element).display === 'contents')
+      element.style.setProperty('display', 'block', 'important');
+  }
+
+  private release(element: HTMLElement) {
+    const saved = this.pageStyle.get(element) ?? HELD_PROPERTIES.map((name) => [name, '', '']);
+    for (const [name, value, priority] of saved) {
+      if (value) element.style.setProperty(name, value, priority);
+      else element.style.removeProperty(name);
+    }
+    this.pageStyle.delete(element);
+    this.held.delete(element);
+    this.revealed.delete(element);
+  }
+
+  private repair(element: HTMLElement) {
+    if (this.revealed.has(element) || !element.style) return;
+    const manual = element.getAttribute(REDACT_ATTR) === 'manual';
+    if (!this.held.has(element) && !manual) return;
+    const count = (this.repairs.get(element) ?? 0) + 1;
+    this.repairs.set(element, count);
+    this.repairReset ??= setTimeout(() => {
+      this.repairReset = undefined;
+      this.repairs.clear();
+    }, REPAIR_TICK_MS);
+    if (count > REPAIRS_PER_TICK) this.surrender(element);
+    else if (manual) this.pin(element);
+    else this.hold(element);
+  }
+
+  private surrender(element: HTMLElement) {
+    if (element.getAttribute(REDACT_ATTR) !== 'text' || this.originals.has(element)) return;
+    const original = element.textContent ?? '';
+    this.originals.set(element, original);
+    element.textContent = '•'.repeat(original.length);
+  }
+
+  private pin(element: HTMLElement) {
+    for (const [name, value] of HELD_STYLE) {
+      if (element.style.getPropertyValue(name) !== value || element.style.getPropertyPriority(name) !== 'important')
+        element.style.setProperty(name, value, 'important');
+    }
   }
 }
